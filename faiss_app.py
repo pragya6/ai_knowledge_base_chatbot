@@ -8,11 +8,10 @@ import streamlit as st
 from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import WebBaseLoader, PyPDFLoader, OnlinePDFLoader
 from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
 
 load_dotenv() # local path to api key
 
@@ -86,7 +85,7 @@ def chunk_text(docs):
 # Embedding model from Huggingface- download once
 @st.cache_resource
 def get_embeddings():
-  return HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+  return GoogleGenerativeAIEmbeddings(model="models/embedding-001")
 
 embeddings = get_embeddings()
 
