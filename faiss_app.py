@@ -2,7 +2,6 @@
 
 import os
 import logging
-import chromadb
 import tempfile
 import streamlit as st
 
@@ -12,13 +11,15 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import WebBaseLoader, PyPDFLoader, OnlinePDFLoader
+from langchain_community.vectorstores import FAISS
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
-# load_dotenv() # local path to api key
+load_dotenv() # local path to api key
 
 # For Streamlit Cloud
-if "GOOGLE_API_KEY" not in os.environ:
-    if "GOOGLE_API_KEY" in st.secrets:
-        os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"] 
+# if "GOOGLE_API_KEY" not in os.environ:
+#     if "GOOGLE_API_KEY" in st.secrets:
+#         os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"] 
 
 # Setup logger
 logging.basicConfig(level=logging.WARNING, filename="errors.log")
@@ -82,60 +83,40 @@ def chunk_text(docs):
   return chunks
 
 
+# Embedding model from Huggingface- download once
+@st.cache_resource
+def get_embeddings():
+  return HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+
+embeddings = get_embeddings()
+
+
 # Build knowledge base with chunked text
 def build_knowledge_base(chunks):
-  chroma_client = chromadb.Client()
-
-  chroma_client.delete_collection(name="knowledge_base_ai_chatbot")
-  collection = chroma_client.create_collection(name="knowledge_base_ai_chatbot")
-
-  # Make list of documents, metadatas and ids to add to collection
-  docs, metadatas, ids = [], [], []
-  for i, doc in enumerate(chunks):
-    docs.append(doc.page_content)
-    ids.append(f"doc_{i}")
-
-    # Append clean metadata, for chromadb to process
-    clean_meta = {
-      k: str(v) if v is not None else "unknown"
-      for k,v in doc.metadata.items()
-      if isinstance(v, (str, int, bool, float)) or v is None
-    }
-    metadatas.append(clean_meta)
-
-  collection.add(
-    documents=docs,
-    ids=ids,
-    metadatas=metadatas
-  )
-
-  logger.info("Embed Added to Collection")
-  return collection
+  vectorstore = FAISS.from_documents(chunks, embeddings)
+  return vectorstore
 
 
 # Retrieve data from collection on basis of question
-def retrieve(collection: chromadb.Collection, query, n_results=6, min_similarity=0.5):
-  results = collection.query(query_texts=[query], n_results=n_results)
+def retrieve(vectorstore, query, n_results=4, min_similarity=0.5):
+  docs = vectorstore.similarity_search_with_score(query, k=n_results)
 
-  filtered_docs = []
-  filtered_meta = []
+  filtered = []
 
-  for i in range(len(results["documents"][0])):
-    distance = results["distances"][0][i]
-    similarity = 1/(distance+1)
+  for doc, score in docs:
+    similarity = 1/(score+1)
 
     if (similarity >= min_similarity):
-      filtered_docs.append(results["documents"][0][i])
-      filtered_meta.append(results["metadatas"][0][i])
+      filtered.append(doc)
 
-  if not filtered_docs:
-    filtered_docs.append(results["documents"][0][0])
-    filtered_meta.append(results["metadatas"][0][0])
+  if not filtered:
+    filtered.append(docs[0][0])
 
-  # Make single string out of documents and metadata for AI to cite
-  docs_string = "\n\n".join(f"Doc {i}: {doc}\n Meta {i}: {filtered_meta[i]}" for i,doc in enumerate(filtered_docs))
+  # Make a string of documents and metadata for AI to cite
+  docs_string = "\n\n".join(f"Doc {i}: {doc.page_content}\n Meta {i}: {doc.metadata}" for i,doc in enumerate(filtered))
 
   return docs_string
+
 
 @st.cache_resource
 def get_llm():
@@ -155,7 +136,7 @@ prompt = ChatPromptTemplate.from_messages([
     
     Format response as: 
       [Answer text]
-      \nSource: citattions from document or page number from metadata if available or citation
+      \nSource: [source from metadata]
    """),
   ('human', """Answer from the given context only.
     Context: {context}
@@ -169,9 +150,9 @@ chain = prompt | llm | StrOutputParser()
 
 
 # Ask User Question return LLM Answer
-def ask(collection, question):
-  # Retrieve relevant data from collection
-  context = retrieve(collection, question)
+def ask(vectorsotre, question):
+  # Retrieve relevant data from vectorsotre
+  context = retrieve(vectorsotre, question)
 
   # Get the llm answer
   answer = chain.invoke({
@@ -204,13 +185,13 @@ with st.sidebar:
 
   clicked = st.button("Process")
 
-if "collection" not in st.session_state:
-  st.session_state.collection = None
+if "vectorstore" not in st.session_state:
+  st.session_state.vectorstore = None
 
 if clicked and source:
   with st.spinner("Processing..."):
     st.session_state.messages = []
-    st.session_state.collection = build_knowledge_base(chunk_text(load_document(source)))
+    st.session_state.vectorstore = build_knowledge_base(chunk_text(load_document(source)))
   st.success("Document Loaded!")
 
 
@@ -234,7 +215,7 @@ if question := st.chat_input("Ask a question"):
 
   # Get Answer from AI
   try:
-    answer = ask(st.session_state.collection, question.strip())
+    answer = ask(st.session_state.vectorstore, question.strip())
     with st.chat_message("assistant"):
       st.write(answer)
     st.session_state.messages.append({"role": "assistant", "content": answer})
