@@ -85,7 +85,7 @@ def chunk_text(docs):
 # Embedding model from Huggingface- download once
 @st.cache_resource
 def get_embeddings():
-  return GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+  return GoogleGenerativeAIEmbeddings(model="gemini-embedding-001")
 
 embeddings = get_embeddings()
 
