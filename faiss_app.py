@@ -16,9 +16,9 @@ from langchain_community.vectorstores import FAISS
 load_dotenv() # local path to api key
 
 # For Streamlit Cloud
-# if "GOOGLE_API_KEY" not in os.environ:
-#     if "GOOGLE_API_KEY" in st.secrets:
-#         os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"] 
+if "GOOGLE_API_KEY" not in os.environ:
+    if "GOOGLE_API_KEY" in st.secrets:
+        os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"] 
 
 # Setup logger
 logging.basicConfig(level=logging.WARNING, filename="errors.log")
