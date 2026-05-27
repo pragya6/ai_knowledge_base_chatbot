@@ -1,7 +1,11 @@
 # AI Knowledge Base Chatbot
+# Fix for ChromaDB on streamlit, 
+# Newer version of SQLLite supported by ChromaDB
+__import__('pysqlite3')
+import sys
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 
 import os
-import json
 import logging
 import chromadb
 import tempfile
